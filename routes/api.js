@@ -10,6 +10,7 @@
 
 const log = require('simple-node-logger').createSimpleLogger();
 const NO_SUCH_BOOK_ERROR = 'No such book';
+const COMMENT_NOT_SENT_ERROR = 'Missing comment';
 
 log.setLevel('debug');
 
@@ -88,7 +89,7 @@ module.exports = function (app) {
 
       if (title === '' || title === undefined) {
         log.error('Missing title');
-        res.status(400);
+        res.status(200);
         res.send('missing required field title');
       } else {
         bookCollection.add({
@@ -139,15 +140,16 @@ module.exports = function (app) {
 
       try {
           const returnedBook = await getOneBookById(bookid);
+          const returnedComments = returnedBook.data().comments.map(commentObj => commentObj.comment);
           res.json({
               _id: returnedBook.id,
               title: returnedBook.data().title,
               commentcount: returnedBook.data().comments.length,
-              comments: returnedBook.data().comments
+              comments: returnedComments
           })
       } catch (e) {
           log.error(e);
-          res.status(404);
+          res.status(200);
           res.send('no book exists');
       }
       //json res format: {"_id": bookid, "title": book_title, "comments": [comment,comment,...]}
@@ -157,17 +159,18 @@ module.exports = function (app) {
       let bookid = req.params.id;
       let comment = req.body.comment;
 
-      if (comment === '' || comment === undefined) {
-          log.error('no comment sent');
-          res.status(400);
-          res.send('missing required field comment');
-      } else {
+
 
           log.info('Adding comment to book with ID ', bookid);
 
           try {
+              let bookToUpdate = await getOneBookById(bookid);
+
+              if (comment === '' || comment === undefined) {
+                  throw new Error(COMMENT_NOT_SENT_ERROR);
+              }
+
               await db.runTransaction(async (t) => {
-                  const bookToUpdate = await getOneBookById(bookid);
                   let index = 0;
                   if (bookToUpdate.data().comments !== undefined) {
                       index = bookToUpdate.data().comments.length + 1;
@@ -188,21 +191,26 @@ module.exports = function (app) {
               log.info('Transaction successful')
               log.info('Getting updated book')
               let updatedBook = await getOneBookById(bookid);
+              const returnedComments = updatedBook.data().comments.map(commentObj => commentObj.comment);
               let updatedBookRes = {
                   _id: updatedBook.id,
                   title: updatedBook.data().title,
-                  comments: updatedBook.data().comments
+                  comments: returnedComments
               }
               res.json(updatedBookRes);
               log.info('Response sent')
           } catch (err) {
               log.error(err);
               if (err.message === NO_SUCH_BOOK_ERROR) {
-                  res.status(404);
+                  res.status(200);
                   res.send('no book exists');
+              } else if (err.message === COMMENT_NOT_SENT_ERROR) {
+                  log.error('no comment sent');
+                  res.status(200);
+                  res.send('missing required field comment');
               }
           }
-      }
+
 
 
 
@@ -220,7 +228,7 @@ module.exports = function (app) {
       } catch (e) {
           log.error(e);
           if (e.message === NO_SUCH_BOOK_ERROR) {
-              res.status(404);
+              res.status(200);
               res.send('no book exists');
           } else {
               res.sendStatus(400);
